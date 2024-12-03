@@ -1,0 +1,70 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
+using LinqKit;
+
+
+
+public class MyModel1
+{
+    public string Username { get; set; }
+    public int A { get; set; }
+    public int B { get; set; }
+
+    void MainCode()
+    {
+        var evaluator = new PredicateEvaluator<MyModel1>();
+
+        var model = new MyModel1
+        {
+            Username = "",
+            A = 0,
+            B = 3
+        };
+
+        // Evaluate predicates
+        var results = evaluator.Evaluate(model);
+
+        // Output results
+        Console.WriteLine("Detailed Results:");
+        foreach (var result in results)
+        {
+            Console.WriteLine($"{result.Key}: {result.Value}");
+        }
+    }
+}
+
+public class PredicateEvaluator<T>
+{
+    public Dictionary<string, bool> Evaluate(T model)
+    {
+        // Define individual predicates
+        var predicate1 = PredicateBuilder.New<T>(x => ((MyModel1)(object)x).Username == "");
+        var predicate2 = PredicateBuilder.New<T>(x => ((MyModel1)(object)x).A == 0);
+        var predicate3 = PredicateBuilder.New<T>(x => ((MyModel1)(object)x).B == 2);
+
+        // Combine predicates into logical groups
+        var group1 = PredicateBuilder.New<T>();
+        group1 = group1.Or(predicate2).Or(predicate3); // (A == 0 || B == 2)
+
+        var composite = PredicateBuilder.New<T>();
+        composite = composite.And(predicate1).And(group1); // (Username == "") && (A == 0 || B == 2)
+
+        // Dictionary to track results
+        var results = new Dictionary<string, bool>();
+
+        // Compile and evaluate each predicate and group
+        results["Username == \"\""] = predicate1.Compile()(model);
+        results["A == 0"] = predicate2.Compile()(model);
+        results["B == 2"] = predicate3.Compile()(model);
+        results["(A == 0 || B == 2)"] = group1.Compile()(model);
+        results["(Username == \"\" && (A == 0 || B == 2))"] = composite.Compile()(model);
+
+        return results;
+    }
+}
+
+
+// running the code 
+

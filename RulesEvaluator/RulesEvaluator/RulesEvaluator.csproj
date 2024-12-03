@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		
+		<PublishAot>true</PublishAot>
+		<IsAotCompatible>true</IsAotCompatible>
+		<PublishTrimmed>true</PublishTrimmed>
+		<StripSymbols>false</StripSymbols>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Remove="ExpressionBuilders\**" />
+		<EmbeddedResource Remove="ExpressionBuilders\**" />
+		<None Remove="ExpressionBuilders\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Compile Remove="Program.cs" />
+		<Compile Remove="RuleDefinitions.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="ForRef\lq1.cs1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="LinqKit.Microsoft.EntityFrameworkCore" Version="8.1.7" />
+		<PackageReference Include="System.Linq.Dynamic.Core" Version="1.4.9" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="ExpressionBuilders\" />
+	</ItemGroup>
+
+</Project>

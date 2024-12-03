@@ -1,0 +1,130 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+using LinqKit;
+
+public class DynamicPredicateEvaluator<T>
+{
+    public Dictionary<string, bool> Evaluate(Expression<Func<T, bool>> compositePredicate, T model)
+    {
+        // Dictionary to track results
+        var results = new Dictionary<string, bool>();
+
+        // Evaluate the composite predicate
+        var compositeResult = EvaluateExpression(compositePredicate.Body, model, compositePredicate.Parameters[0], results);
+
+        // Add the composite result to the dictionary
+        results[compositePredicate.ToString()] = compositeResult;
+
+        return results;
+    }
+
+    private bool EvaluateExpression(Expression expression, T model, ParameterExpression parameter, Dictionary<string, bool> results)
+    {
+        switch (expression)
+        {
+            case BinaryExpression binaryExpr:
+                return EvaluateBinaryExpression(binaryExpr, model, parameter, results);
+
+            case MemberExpression memberExpr:
+                return EvaluateBooleanMemberExpression(memberExpr, model, parameter);
+
+            case ConstantExpression constExpr:
+                return Convert.ToBoolean(constExpr.Value);
+
+            case MethodCallExpression methodCallExpr:
+                return EvaluateMethodCallExpression(methodCallExpr, model, parameter);
+
+            default:
+                throw new NotSupportedException($"Unsupported expression type: {expression.GetType()}");
+        }
+    }
+
+    private bool EvaluateBinaryExpression(BinaryExpression binaryExpr, T model, ParameterExpression parameter, Dictionary<string, bool> results)
+    {
+        // Evaluate the left and right sides
+        var leftValue = GetValue(binaryExpr.Left, model, parameter);
+        var rightValue = GetValue(binaryExpr.Right, model, parameter);
+
+        // Combine results based on the operator
+        var result = binaryExpr.NodeType switch
+        {
+            ExpressionType.AndAlso => (bool)leftValue && (bool)rightValue,
+            ExpressionType.OrElse => (bool)leftValue || (bool)rightValue,
+            ExpressionType.Equal => Equals(leftValue, rightValue),
+            ExpressionType.NotEqual => !Equals(leftValue, rightValue),
+            ExpressionType.GreaterThan => Comparer<object>.Default.Compare(leftValue, rightValue) > 0,
+            ExpressionType.GreaterThanOrEqual => Comparer<object>.Default.Compare(leftValue, rightValue) >= 0,
+            ExpressionType.LessThan => Comparer<object>.Default.Compare(leftValue, rightValue) < 0,
+            ExpressionType.LessThanOrEqual => Comparer<object>.Default.Compare(leftValue, rightValue) <= 0,
+            _ => throw new NotSupportedException($"Unsupported binary operator: {binaryExpr.NodeType}")
+        };
+
+        // Record the result
+        var description = binaryExpr.ToString();
+        results[description] = result;
+
+        return result;
+    }
+
+    private bool EvaluateMethodCallExpression(MethodCallExpression methodCallExpr, T model, ParameterExpression parameter)
+    {
+        // Compile and evaluate the method call expression
+        var lambda = Expression.Lambda(methodCallExpr, parameter);
+        var compiled = lambda.Compile();
+        return (bool)compiled.DynamicInvoke(model);
+    }
+
+    private bool EvaluateBooleanMemberExpression(MemberExpression memberExpr, T model, ParameterExpression parameter)
+    {
+        // Only evaluate boolean members directly
+        var lambda = Expression.Lambda<Func<T, bool>>(memberExpr, parameter);
+        var compiled = lambda.Compile();
+        return compiled(model);
+    }
+
+    private object GetValue(Expression expression, T model, ParameterExpression parameter)
+    {
+        switch (expression)
+        {
+            case MemberExpression memberExpr:
+                // Compile and evaluate the member expression
+                var memberLambda = Expression.Lambda(memberExpr, parameter);
+                var memberCompiled = memberLambda.Compile();
+                return memberCompiled.DynamicInvoke(model);
+
+            case ConstantExpression constExpr:
+                return constExpr.Value;
+
+            case MethodCallExpression methodCallExpr:
+                // Compile and evaluate the method call expression
+                var methodLambda = Expression.Lambda(methodCallExpr, parameter);
+                var methodCompiled = methodLambda.Compile();
+                return methodCompiled.DynamicInvoke(model);
+
+            case BinaryExpression binaryExpr:
+                // Evaluate the binary expression
+                return EvaluateBinaryExpression(binaryExpr, model, parameter, new Dictionary<string, bool>());
+
+            default:
+                throw new NotSupportedException($"Unsupported expression type for value extraction: {expression.GetType()}");
+        }
+    }
+
+    public Expression<Func<T, bool>> CombinePredicates(List<Expression<Func<T, bool>>> predicates, bool useAnd = true)
+    {
+        if (predicates == null || predicates.Count == 0)
+            throw new ArgumentException("Predicates list cannot be null or empty");
+
+        // Start with the first predicate
+        var combined = PredicateBuilder.New<T>(predicates[0]);
+
+        // Combine the rest using AND/OR
+        for (int i = 1; i < predicates.Count; i++)
+        {
+            combined = useAnd ? combined.And(predicates[i]) : combined.Or(predicates[i]);
+        }
+
+        return combined;
+    }
+}

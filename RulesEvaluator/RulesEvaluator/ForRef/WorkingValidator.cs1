@@ -1,0 +1,205 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Text.RegularExpressions;
+using LinqKit;
+
+public class DynamicPredicateEvaluator<T>
+{
+    public Dictionary<string, bool> Evaluate(string predicateString, T model)
+    {
+        // Create a global parameter for all expressions
+        var parameter = Expression.Parameter(typeof(T), "x");
+
+        // Parse the predicate string into conditions and groups
+        var parsedPredicates = ParsePredicateString(predicateString, parameter);
+
+        // Build the composite predicate dynamically
+        var (compositePredicate, groupResults) = BuildCompositePredicate(parsedPredicates, model, parameter);
+
+        // Dictionary to track results
+        var results = new Dictionary<string, bool>();
+
+        // Add individual predicate results
+        foreach (var parsedPredicate in parsedPredicates.IndividualPredicates)
+        {
+            results[parsedPredicate.Condition] = parsedPredicate.Expression.Compile()(model);
+        }
+
+        // Add logical group results
+        foreach (var group in groupResults)
+        {
+            results[group.Key] = group.Value;
+        }
+
+        // Evaluate the composite result
+        results[predicateString] = compositePredicate.Compile()(model);
+
+        return results;
+    }
+
+    private ParsedPredicates<T> ParsePredicateString(string predicateString, ParameterExpression parameter)
+    {
+        var individualPredicates = new List<ParsedPredicate<T>>();
+        var logicalGroups = new Dictionary<string, string>();
+
+        // Regex pattern to extract logical groups (in parentheses) and individual conditions
+        var groupPattern = @"\((?<Group>[^\)]+)\)";
+        var conditionPattern = @"(?<Condition>[^\s()]+)\s*(?<Operator>[=<>!]+)\s*(?<Value>[^\s()]+)";
+
+        // Extract logical groups
+        var groupMatches = Regex.Matches(predicateString, groupPattern);
+        foreach (Match match in groupMatches)
+        {
+            var groupContent = match.Groups["Group"].Value.Trim();
+            logicalGroups[$"({groupContent})"] = groupContent;
+        }
+
+        // Extract individual conditions
+        var conditionMatches = Regex.Matches(predicateString, conditionPattern);
+        foreach (Match match in conditionMatches)
+        {
+            var condition = match.Groups["Condition"].Value;
+            var operatorStr = match.Groups["Operator"].Value;
+            var value = match.Groups["Value"].Value;
+
+            // Skip conditions that are part of logical groups
+            if (logicalGroups.Values.Any(g => g.Contains(condition))) continue;
+
+            var expression = BuildExpression(condition, operatorStr, value, parameter);
+            individualPredicates.Add(new ParsedPredicate<T> { Condition = $"{condition} {operatorStr} {value}", Expression = expression });
+        }
+
+        // Build logical group expressions
+        var groupPredicates = new List<ParsedPredicate<T>>();
+        foreach (var logicalGroup in logicalGroups)
+        {
+            var groupExpression = BuildGroupExpression(logicalGroup.Value, parameter);
+            groupPredicates.Add(new ParsedPredicate<T> { Condition = logicalGroup.Key, Expression = groupExpression });
+        }
+
+        return new ParsedPredicates<T>
+        {
+            IndividualPredicates = individualPredicates,
+            LogicalGroupPredicates = groupPredicates
+        };
+    }
+
+    private Expression<Func<T, bool>> BuildExpression(string propertyName, string operatorStr, string value, ParameterExpression parameter)
+    {
+        // Get the property of the model type
+        var property = Expression.Property(parameter, propertyName);
+
+        // Handle string constants explicitly (trim quotes if present)
+        var trimmedValue = value.Trim('"');
+
+        // Convert the value to the correct type of the property
+        var convertedValue = property.Type == typeof(string)
+            ? trimmedValue // Use the trimmed string for string properties
+            : Convert.ChangeType(trimmedValue, property.Type);
+
+        var constant = Expression.Constant(convertedValue, property.Type);
+
+        // Build the expression based on the operator
+        Expression comparison = operatorStr switch
+        {
+            "==" => Expression.Equal(property, constant),
+            "!=" => Expression.NotEqual(property, constant),
+            ">" => Expression.GreaterThan(property, constant),
+            ">=" => Expression.GreaterThanOrEqual(property, constant),
+            "<" => Expression.LessThan(property, constant),
+            "<=" => Expression.LessThanOrEqual(property, constant),
+            _ => throw new NotSupportedException($"Operator '{operatorStr}' is not supported.")
+        };
+
+        return Expression.Lambda<Func<T, bool>>(comparison, parameter);
+    }
+
+
+    public Expression<Func<T, bool>> BuildGroupExpression(string groupContent, ParameterExpression parameter)
+    {
+        // Split conditions by logical operators (preserve the operator context)
+        var conditions = Regex.Split(groupContent, @"(\|\||&&)").Where(c => !string.IsNullOrWhiteSpace(c)).ToArray();
+
+        Expression groupExpression = null;
+        string lastOperator = null;
+
+        foreach (var part in conditions)
+        {
+            if (part == "||" || part == "&&")
+            {
+                // Store the operator for the next condition
+                lastOperator = part;
+                continue;
+            }
+
+            // Match a condition (e.g., A == 0)
+            var match = Regex.Match(part.Trim(), @"(?<Property>[^\s]+)\s*(?<Operator>[=<>!]+)\s*(?<Value>[^\s]+)");
+            if (!match.Success) continue;
+
+            var property = match.Groups["Property"].Value;
+            var operatorStr = match.Groups["Operator"].Value;
+            var value = match.Groups["Value"].Value;
+
+            // Build the condition as an expression
+            var conditionExpression = BuildExpression(property, operatorStr, value, parameter).Body;
+
+            // Combine conditions using the last operator
+            if (groupExpression == null)
+            {
+                groupExpression = conditionExpression;
+            }
+            else if (lastOperator == "||")
+            {
+                groupExpression = Expression.OrElse(groupExpression, conditionExpression);
+            }
+            else if (lastOperator == "&&")
+            {
+                groupExpression = Expression.AndAlso(groupExpression, conditionExpression);
+            }
+        }
+
+        return Expression.Lambda<Func<T, bool>>(groupExpression, parameter);
+    }
+
+
+    private (ExpressionStarter<T>, Dictionary<string, bool>) BuildCompositePredicate(ParsedPredicates<T> parsedPredicates, T model, ParameterExpression parameter)
+    {
+        var composite = PredicateBuilder.New<T>(true);
+        var groupResults = new Dictionary<string, bool>();
+
+        // Add individual predicates to the composite
+        foreach (var predicate in parsedPredicates.IndividualPredicates)
+        {
+            composite = composite.And(predicate.Expression);
+        }
+
+        // Add logical groups to the composite and evaluate them
+        foreach (var groupPredicate in parsedPredicates.LogicalGroupPredicates)
+        {
+            // Create a fresh ExpressionStarter for each logical group
+            var groupExpression = PredicateBuilder.New<T>();
+            groupExpression = groupExpression.Or(groupPredicate.Expression);
+
+            // Evaluate the group independently
+            groupResults[groupPredicate.Condition] = groupPredicate.Expression.Compile()(model);
+
+            // Combine it into the composite predicate
+            composite = composite.And(groupExpression);
+        }
+
+        return (composite, groupResults);
+    }
+}
+
+public class ParsedPredicate<T>
+{
+    public string Condition { get; set; }
+    public Expression<Func<T, bool>> Expression { get; set; }
+}
+
+public class ParsedPredicates<T>
+{
+    public List<ParsedPredicate<T>> IndividualPredicates { get; set; }
+    public List<ParsedPredicate<T>> LogicalGroupPredicates { get; set; }
+}
