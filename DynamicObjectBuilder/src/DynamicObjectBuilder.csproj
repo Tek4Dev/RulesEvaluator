@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Remove="DynamicTypeBuilder -orig.cs1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="ClosedXML" Version="0.97.0" />
+		<PackageReference Include="FluentValidation" Version="11.5.1" />
+		<PackageReference Include="JsonByExampleGenerator" Version="0.10.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="NJsonSchema.CodeGeneration.CSharp" Version="11.1.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="model.xlsx">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+		<AdditionalFiles Include="DemoModel.json" />
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+﻿<Root>
+	<Customer>
+		<Name>John Doe with very lon name.........here</Name>
+		<Orders>
+			<Order>
+				<Id>1</Id>
+				<Date>2025-01-01</Date>
+				<AddressLine1>Main Street</AddressLine1>
+			</Order>
+			<Order>
+				<Id>2</Id>
+				<Date>2025-01-02</Date>
+				<AddressLine1>Second Street</AddressLine1>
+			</Order>
+		</Orders>
+	</Customer>
+	<Department>
+		<Id>101</Id>
+		<IsActive>true</IsActive>
+	</Department>
+
+</Root>

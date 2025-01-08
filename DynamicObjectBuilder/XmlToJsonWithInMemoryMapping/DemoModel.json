@@ -1,0 +1,21 @@
+{
+  "Customer": {
+    "FullName": "John Doe w",
+    "Orders": [
+      {
+        "OrderId": "1",
+        "OrderDate": "2025-01-01",
+        "AddressLine1": "Main Street"
+      },
+      {
+        "OrderId": "2",
+        "OrderDate": "2025-01-02",
+        "AddressLine1": "Second Street"
+      }
+    ]
+  },
+  "Dept": {
+    "Id": 101,
+    "Active": true
+  }
+}
